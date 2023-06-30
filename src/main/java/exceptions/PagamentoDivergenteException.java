@@ -1,6 +1,6 @@
 package exceptions;
 
-public class PagamentoDivergenteException extends Throwable {
+public class PagamentoDivergenteException extends Exception {
 
     public PagamentoDivergenteException() {
         super("Error!!! Pagamento divergente!");

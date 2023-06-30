@@ -1,8 +1,17 @@
+import java.io.IOException;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
+
 import exceptions.PagamentoDivergenteException;
 import exceptions.PagamentoJaExecutadoException;
 import exceptions.PagamentoNaoEncontradoException;
@@ -13,23 +22,15 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import mapper.PagamentoMapper;
 import model.Pagamento;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import service.PagamentoExecutorService;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import strategy.FabricaEstrategiaPagamento;
 
 @RequiredArgsConstructor
 @ApplicationScoped
@@ -38,21 +39,28 @@ import java.util.concurrent.Executors;
 public class SQSListener {
 
     @Inject
-    private  SqsClient sqsClient;
+    private SqsClient sqsClient;
 
     @Inject
     @ConfigProperty(name = "quarkus.sqs.aws.queue.url")
     private String queueUrl;
 
     @Inject
-    private  PagamentoExecutorService pagamentoExecutorService;
+    private PagamentoExecutorService pagamentoExecutorService;
+
+    @Inject
+    private PagamentoMapper pagamentoMapper;
 
     static ObjectReader PAGAMENTO_READER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,false)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             .readerFor(Pagamento.class);
     ObjectMapper objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private static final int MAX_MESSAGES = 3; // Define o número máximo de mensagens a serem processadas por vez
-    private static final ExecutorService executorService = Executors.newFixedThreadPool(MAX_MESSAGES); // Cria um pool de threads com tamanho máximo de MAX_MESSAGES
+    private static final ExecutorService executorService = Executors.newFixedThreadPool(MAX_MESSAGES); // Cria um pool
+                                                                                                       // de threads com
+                                                                                                       // tamanho máximo
+                                                                                                       // de
+                                                                                                       // MAX_MESSAGES
 
     @PostConstruct
     public void startListening() throws IOException {
@@ -94,13 +102,24 @@ public class SQSListener {
             @Override
             public void run() {
                 try {
-                    pagamentoExecutorService.executePagamento(message);
+                    Pagamento pagamento = pagamentoMapper.pagamentoFromMessage(message);
+
+                    var estrategiaPagamento = FabricaEstrategiaPagamento.criarEstrategiaPagamento(pagamento);
+                    estrategiaPagamento.executar(pagamentoExecutorService);
+
                     sqsClient.deleteMessage(DeleteMessageRequest.builder()
                             .queueUrl(queueUrl)
                             .receiptHandle(message.receiptHandle())
                             .build());
-                } catch (Exception | PagamentoJaExecutadoException | PagamentoNaoEncontradoException |
-                         PagamentoDivergenteException e) {
+
+                } catch (PagamentoJaExecutadoException | PagamentoNaoEncontradoException
+                        | PagamentoDivergenteException e) {
+                    e.printStackTrace();
+                    sqsClient.deleteMessage(DeleteMessageRequest.builder()
+                            .queueUrl(queueUrl)
+                            .receiptHandle(message.receiptHandle())
+                            .build());
+                } catch (JsonProcessingException e) {
                     e.printStackTrace();
                     throw new RuntimeException(e);
                 }

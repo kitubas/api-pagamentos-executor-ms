@@ -38,6 +38,15 @@ public class Pagamento {
     @JsonProperty("executado")
     private Boolean executado;
 
+    @NonNull
+    @JsonProperty("tipoPagamento")
+    @Column(name = "tipo_pagamento")
+    @Enumerated(EnumType.STRING)
+    private TipoPagamento tipoPagamento;
+
+    @JsonProperty("dataHoraExecucao")
+    @Column(name = "data_hora_execucao")
+    private String dataHoraExecucao;
 
     @Override
     public boolean equals(Object obj) {

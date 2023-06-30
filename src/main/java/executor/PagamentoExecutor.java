@@ -9,7 +9,7 @@ import model.Pagamento;
 public class PagamentoExecutor {
 
     public Pagamento executarPagamento(Pagamento pagamento){
-        log.info("pagamento " + pagamento.getId() + " está sendo executado");
+        log.info("Pagamento " + pagamento.getId() + " está sendo executado");
         pagamento.setExecutado(true);
         return pagamento;
     }
